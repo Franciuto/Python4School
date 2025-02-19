@@ -7,10 +7,9 @@ somma = 0
 for i in range (1, 20):
     numero = random.randint(1, 100)
     numeri.append(numero)
-    somma += numero
 
 # Calcolo media e stampa
 print("Lista di numeri casuali")
 print(numeri)
-media = somma / len(numeri)
+media = sum(numeri) / len(numeri)
 print(f'La media è {media}')
