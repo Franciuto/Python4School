@@ -8,18 +8,15 @@ def livelloFacile(nr_letters, nr_symbols, nr_numbers):
     passwordFacile = []
     # Aggiungo nr_letters random nella password
     for i in range (0 , nr_letters):
-        rand = random.randint(0, len(letters))
-        passwordFacile.append(letters[rand])
+        passwordFacile.append(random.choice(letters))
 
     # Aggiungo nr_symbol random nella password
     for i in range (0 , nr_symbols):
-        rand = random.randint(0, len(symbols))
-        passwordFacile.append(symbols[rand])
+        passwordFacile.append(random.choice(symbols))
 
-    # Aggiungo nr_numbers random nella password
+    # Aggiungo nr_numbers r22andom nella password
     for i in range (0 , nr_numbers):
-        rand = random.randint(0, len(numbers))
-        passwordFacile.append(numbers[rand])
+        passwordFacile.append(random.choice(numbers))
     
     return passwordFacile
 
