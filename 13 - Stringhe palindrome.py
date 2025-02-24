@@ -1,7 +1,10 @@
 string = input("Inserisci stringa: ")
-string = string.replace(" ","")
+cleanString = ""
+for lettera in string:
+    if lettera.isalpha():
+        cleanString += lettera
 
-if string == string[::-1]:
+if cleanString == cleanString[::-1]:
     print("La stringa è palindroma")
 else: 
     print("La stringa non è palindroma")
