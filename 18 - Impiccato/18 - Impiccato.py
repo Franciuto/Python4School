@@ -62,7 +62,7 @@ def clear ():
     else:
         os.system('clear')
 
-# DRAW ASCII-ART
+# DRAW ASCII-ART RELATED TO USER LIFES
 def draw (life):
     match life:
         case 5:
@@ -76,29 +76,30 @@ def draw (life):
         case 1:
             print(vite5)
 
-# DRAW PLACEHOLDERS
+# PRINT THE WORD
 def print_word (word_len):
     out = " ".join(game)
     print(out)
 
-# OPEN WORDLIST
+# OPEN THE WORDLIST FILE 
 wordlist = "wordlist.txt"
 file = open(wordlist , "r")
 words = file.read().splitlines()
-words = list(words)
+words = list(words)     # Combine the words in a list
 
-# ------ PROGRAM START -------
+# ------- GAME START -------
 
-# PICK A RANODM WORD FROM THE SOURCE
+# PICK A RANODM WORD FROM THE SOURCE FILE
 word = list(random.choice(words))
-word_len = len(word)
+word_len = len(word)       # Save the word lenght
 
 # DECLARATION
 vite = 5
-global game
+global game     # Variable to store the guessing progress
 
 # INITIALIZE GAME VECTOR
 game = []
+# Initialize the vector with "_"
 for i in range (0 , word_len):
     game.append("_")
 
@@ -106,18 +107,19 @@ for i in range (0 , word_len):
 print(f"Benvenuto nel gioco dell'impiccato!!")
 
 # ROUND INIT
+# Continue playing until all letters have been guessed or no lifes left
 while "_" in game and vite > 0:
-        draw(vite)
-        print_word(word_len)
+        draw(vite)      # Print the ASCII art   
+        print_word(word_len)    # Print the word
 
         gameIn = input("\nInserisci una lettera o indovina la parola: ").lower()
-        if len(gameIn) > 1:
+        if len(gameIn) > 1:     # If the input is not a single letter but a string check if it's the match for the entire word
             if gameIn == "".join(word):
                 break
             else:
                 vite = 0
                 break
-        elif gameIn in word:
+        elif gameIn in word:    # If the input is a single letter check if it's in the word and move every letters in the game
             for i in range (0 , word_len):
                 if word[i] == gameIn:
                     game[i] = gameIn
