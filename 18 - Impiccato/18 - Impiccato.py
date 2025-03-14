@@ -1,57 +1,7 @@
 import os
 import random
-
-# ASCII ART
-vite5 = """
- _________
- |/      |
- |      (_)
- |      \\|/
- |       |
- |      / \\
- |
-_|___
-"""
-vite4 = """
- _________
- |/      |
- |      (_)
- |      \\|/
- |       |
- |      
- |
-_|___
-"""
-vite3 = """
- _________
- |/      |
- |      (_)
- |      \\|/
- |       
- |      
- |
-_|___
-"""
-vite2 = """
- _________
- |/      |
- |      (_)
- |      
- |       
- |      
- |
-_|___
-"""
-vite1 = """ 
- _________
- |/      |
- |      
- |      
- |       
- |      
- |
-_|___
-"""
+import hangman_art
+import time
 
 # CLEAR SCREEN
 def clear ():
@@ -63,18 +13,9 @@ def clear ():
         os.system('clear')
 
 # DRAW ASCII-ART RELATED TO USER LIFES
+lifes = hangman_art.stages
 def draw (life):
-    match life:
-        case 5:
-            print(vite1)
-        case 4:
-            print(vite2)
-        case 3:
-            print(vite3)
-        case 2:
-            print(vite4)
-        case 1:
-            print(vite5)
+    print(lifes[life])
 
 # PRINT THE WORD
 def print_word (word_len):
@@ -94,7 +35,7 @@ word = list(random.choice(words))
 word_len = len(word)       # Save the word lenght
 
 # DECLARATION
-vite = 5
+vite = 6
 global game     # Variable to store the guessing progress
 
 # INITIALIZE GAME VECTOR
@@ -104,11 +45,14 @@ for i in range (0 , word_len):
     game.append("_")
 
 # GREETINGS
-print(f"Benvenuto nel gioco dell'impiccato!!")
+print(hangman_art.logo)     # Print logo from file
+print(f"\nBenvenuto nel gioco dell'impiccato!!")
+time.sleep(1.5)
 
 # ROUND INIT
 # Continue playing until all letters have been guessed or no lifes left
 while "_" in game and vite > 0:
+        print(f'~~~ {vite} vite rimaste ~~~')
         draw(vite)      # Print the ASCII art   
         print_word(word_len)    # Print the word
 
@@ -117,14 +61,21 @@ while "_" in game and vite > 0:
             if gameIn == "".join(word):
                 break
             else:
+                print(f'La parola "{gameIn}" è sbagliata')
                 vite = 0
+                time.sleep(1.5)
                 break
+        if gameIn in game:
+            print(f'La lettera "{gameIn}" è già stata inserita')
+            time.sleep(1.5)
         elif gameIn in word:    # If the input is a single letter check if it's in the word and move every letters in the game
             for i in range (0 , word_len):
                 if word[i] == gameIn:
                     game[i] = gameIn
         else:
+            print(f'La lettera "{gameIn}" non è presente nella parola')
             vite -= 1
+            time.sleep(1.5)
         clear()
 
 clear()
