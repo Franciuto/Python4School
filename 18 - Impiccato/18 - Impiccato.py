@@ -74,7 +74,7 @@ while "_" in game and vite > 0:
                     game[i] = gameIn
         else:
             print(f'La lettera "{gameIn}" non è presente nella parola')
-            vite -= 1
+            vite -= 1q
             time.sleep(1.5)
         clear()
 
