@@ -1,0 +1,17 @@
+[
+    {
+        "username": "admin",
+        "password": "admin",
+        "balance": 100
+    },
+    {
+        "username": "franciuto",
+        "password": "prova",
+        "balance": 0
+    },
+    {
+        "username": "shoaib",
+        "password": "ciao",
+        "balance": 0
+    }
+]

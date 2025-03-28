@@ -3,7 +3,6 @@ import random
 import time
 import os
 from prettytable import PrettyTable
-from tabulate import tabulate
 
 print('Benvenuto nel gioco high or lower\n\nℹ Istruzioni ℹ\n ► Ti verranno presentate due opzioni\n ► Dovrai scegliere quella che reputi più seguita')
 
