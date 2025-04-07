@@ -9,5 +9,4 @@ lines = [line.rstrip("\n") + "\n" for line in lines[::-1]]
 print(lines)
 
 with open(file2, "w") as destination:
-    for line in lines:
-        destination.write(line)
+    destination.writelines(lines)
