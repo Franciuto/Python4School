@@ -15,7 +15,7 @@ turtles = []
 def ask_bet ():
     valid = False
     while not valid:
-        bet = window.textinput(title="Scegli la tartaruga", prompt="Quale tartaruga vincerà?\nScegli un colore")
+        bet = window.textinput(title="Scegli la tartaruga", prompt="Quale tartaruga vincerà?\nScegli un colore").lower()
         if bet in colors:
             valid = True
     return bet
