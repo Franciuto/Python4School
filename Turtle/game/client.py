@@ -1,318 +1,278 @@
-import turtle
 import socket
-import threading
 import json
+import threading
+import turtle
+import game_logic
 import time
-
-# Game settings
-SCREEN_X = 500
-SCREEN_Y = 400
-WIN_X = SCREEN_X // 2 - 20
-
-# Connection settings
-SERVER_HOST = '192.168.180.32'  # Change this to the IP of the computer running the server
-SERVER_PORT = 5678
+import queue
 
 class GameClient:
     def __init__(self):
-        self.player_name = None
-        self.client_socket = None
-        self.my_id = None
-        self.connected = False
-        self.turtles = {}  # {player_id: turtle_obj}
-        self.current_turn = None
-        self.current_question = None
-        self.game_started = False
-        self.game_over = False
+        self.socket = None
+        self.player_num = None
+        self.player_color = None
+        self.player_name = "Player"
+        self.game_state = {
+            "red_pos": (-game_logic.SCREEN_X // 2 + 20, 50),
+            "blue_pos": (-game_logic.SCREEN_X // 2 + 20, -50),
+            "turn": 0,
+            "winner": None,
+            "current_question": None,
+            "game_started": False,
+            "player_ready": [False, False]
+        }
+        self.client_names = ["Player 1", "Player 2"]
         self.window = None
-        self.status_writer = None
-        self.question_writer = None
+        self.red_turtle = None
+        self.blue_turtle = None
+        self.connected = False
+        self.lock = threading.Lock()
+        # Use a queue to pass messages from network thread to main thread
+        self.message_queue = queue.Queue()
+        # Flag to ask for input in main thread
+        self.need_input = False
+        self.current_question = None
         
-        # Initialize UI
-        self.setup_screen()
-        self.init_writers()
-        self.draw_finish_line()
-        
-    def setup_screen(self):
-        """Set up the game window"""
-        self.window = turtle.Screen()
-        self.window.setup(width=SCREEN_X, height=SCREEN_Y)
-        self.window.bgcolor("beige")
-        self.window.title("Turtle Race with Quiz (Multiplayer)")
-        self.window.tracer(0)  # Turn off animation
-    
-    def init_writers(self):
-        """Initialize turtle writers for displaying text"""
-        self.status_writer = turtle.Turtle()
-        self.status_writer.hideturtle()
-        self.status_writer.penup()
-        self.status_writer.goto(0, SCREEN_Y // 2 - 40)
-        
-        self.question_writer = turtle.Turtle()
-        self.question_writer.hideturtle()
-        self.question_writer.penup()
-        self.question_writer.goto(0, -SCREEN_Y // 2 + 40)
-    
-    def draw_finish_line(self):
-        """Draw the finish line"""
-        line = turtle.Turtle()
-        line.hideturtle()
-        line.penup()
-        line.color("black")
-        line.goto(WIN_X, -SCREEN_Y // 2)
-        line.setheading(90)
-        line.pensize(3)
-        # Dashed line
-        for _ in range(20):
-            line.pendown()
-            line.forward(SCREEN_Y / 20)
-            line.penup()
-            line.forward(SCREEN_Y / 20)
-        self.window.update()
-    
-    def create_turtle(self, player_id, color, position):
-        """Create a turtle for a player"""
-        if player_id in self.turtles:
-            return
-            
-        turt = turtle.Turtle(shape="turtle")
-        turt.color(color)
-        turt.penup()
-        turt.goto(position)
-        self.turtles[player_id] = turt
-        self.window.update()
-    
-    def connect_to_server(self):
-        """Connect to the game server"""
+    def connect_to_server(self, host, port=8000):
+        """Connect to the game server."""
         try:
-            self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.client_socket.connect((SERVER_HOST, SERVER_PORT))
+            self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.socket.connect((host, port))
             self.connected = True
             
-            # Send player name
-            self.client_socket.send(json.dumps({"name": self.player_name}).encode('utf-8'))
+            # Start a thread to receive messages from the server
+            receive_thread = threading.Thread(target=self.receive_messages)
+            receive_thread.daemon = True
+            receive_thread.start()
             
-            # Start thread to handle server messages
-            receiver_thread = threading.Thread(target=self.receive_messages)
-            receiver_thread.daemon = True
-            receiver_thread.start()
-            
-            self.write_status("Connected to server. Waiting for game to start...")
+            return True
         except Exception as e:
-            self.write_status(f"Failed to connect: {e}")
+            print(f"Failed to connect to server: {e}")
+            return False
     
     def receive_messages(self):
-        """Receive and process messages from the server"""
-        while self.connected:
-            try:
-                data = self.client_socket.recv(4096).decode('utf-8')
-                if not data:
-                    self.connected = False
-                    self.write_status("Disconnected from server")
+        """Receive and process messages from the server."""
+        try:
+            while self.connected and self.socket:
+                try:
+                    data = self.socket.recv(1024)
+                    if not data:
+                        break
+                    
+                    message = json.loads(data.decode())
+                    
+                    # Put message in queue for main thread to process
+                    self.message_queue.put(message)
+                except json.JSONDecodeError:
+                    print("Received invalid JSON data")
+                except Exception as e:
+                    print(f"Error in receive loop: {e}")
                     break
                 
-                # Handle multiple messages that might be received together
-                try:
-                    # Try to parse as a single message
-                    message = json.loads(data)
-                    self.process_message(message)
-                except json.JSONDecodeError:
-                    # Try to split multiple messages
-                    parts = data.split('}{')
-                    for i, part in enumerate(parts):
-                        if i == 0:
-                            if not part.startswith('{'):
-                                part = '{' + part
-                        elif i == len(parts) - 1:
-                            if not part.endswith('}'):
-                                part = part + '}'
-                        else:
-                            part = '{' + part + '}'
-                        
-                        try:
-                            message = json.loads(part)
-                            self.process_message(message)
-                        except json.JSONDecodeError:
-                            print(f"Failed to parse message: {part}")
-                
-            except Exception as e:
-                print(f"Error receiving: {e}")
-                self.connected = False
-                break
+        except Exception as e:
+            print(f"Error receiving message: {e}")
+        finally:
+            self.connected = False
+            print("Disconnected from server")
     
-    def process_message(self, message):
-        """Process a message from the server"""
-        msg_type = message.get('type')
-        
-        if msg_type == 'game_state':
-            # Process initial game state
-            players = message.get('players', {})
-            for player_id, player_data in players.items():
-                player_id = int(player_id)  # Convert from string to int
-                self.create_turtle(
-                    player_id, 
-                    player_data['color'], 
-                    player_data['position']
-                )
+    def process_messages(self):
+        """Process messages in the main thread."""
+        while not self.message_queue.empty():
+            message = self.message_queue.get()
+            message_type = message.get("type")
             
-            self.game_started = message.get('game_started', False)
-            self.current_turn = message.get('current_turn')
+            if message_type == "player_info":
+                self.player_num = message.get("player_num")
+                self.player_color = message.get("color")
+                print(f"You are player {self.player_num + 1} ({self.player_color})")
             
-            if self.game_started:
-                self.write_status("Game in progress")
-        
-        elif msg_type == 'player_joined':
-            # New player joined
-            player_id = message.get('id')
-            name = message.get('name')
-            color = message.get('color')
-            position = message.get('position')
-            
-            self.create_turtle(player_id, color, position)
-            self.write_status(f"{name} joined the game")
-            
-        elif msg_type == 'player_left':
-            # Player left the game
-            player_id = message.get('id')
-            if player_id in self.turtles:
-                self.turtles[player_id].hideturtle()
-                del self.turtles[player_id]
-                self.write_status(f"A player left the game")
-        
-        elif msg_type == 'game_started':
-            # Game has started
-            self.game_started = True
-            self.game_over = False
-            self.write_status("Game started!")
-        
-        elif msg_type == 'next_turn':
-            # Next player's turn
-            self.current_turn = message.get('player_id')
-            self.current_question = message.get('question')
-            
-            # Highlight current player
-            for player_id, turt in self.turtles.items():
-                if player_id == self.current_turn:
-                    turt.shapesize(1.5)  # Make bigger
-                else:
-                    turt.shapesize(1.0)  # Normal size
-            
-            # Display question if it's my turn
-            if self.current_turn == self.my_id:
-                self.ask_question()
-            else:
-                self.write_question(f"Waiting for other player to answer...")
-            
-            self.window.update()
-        
-        elif msg_type == 'player_moved':
-            # Player moved
-            player_id = message.get('id')
-            position = message.get('position')
-            correct = message.get('correct')
-            
-            if player_id in self.turtles:
-                turt = self.turtles[player_id]
-                turt.goto(position)
+            elif message_type == "game_state":
+                with self.lock:
+                    self.game_state = message.get("state")
+                    self.client_names = message.get("client_names", self.client_names)
+                    
+                    # Check if it's my turn
+                    is_my_turn = (self.game_state["turn"] % 2 == self.player_num)
+                    has_question = self.game_state["current_question"] is not None
+                    is_game_active = self.game_state["game_started"] and not self.game_state["winner"]
+                    
+                    if is_my_turn and has_question and is_game_active:
+                        self.need_input = True
+                        self.current_question = self.game_state["current_question"]
                 
-                # Animate correct/wrong
-                if correct:
-                    original_color = turt.color()[0]
-                    turt.color("gold")
-                    self.window.update()
-                    time.sleep(0.3)
-                    turt.color(original_color)
-                else:
-                    original_color = turt.color()[0]
-                    turt.color("gray")
-                    self.window.update()
-                    time.sleep(0.3)
-                    turt.color(original_color)
-                
-                self.window.update()
-        
-        elif msg_type == 'game_over':
-            # Game over, we have a winner
-            winner = message.get('winner')
-            winner_id = winner.get('id')
-            winner_name = winner.get('name')
-            winner_color = winner.get('color')
-            
-            self.game_over = True
-            self.game_started = False
-            
-            # Highlight winner
-            if winner_id in self.turtles:
-                turt = self.turtles[winner_id]
-                turt.shapesize(2.0)  # Make bigger
-            
-            self.write_status(f"{winner_name} wins the game!")
-            self.write_question("Game Over! Click anywhere to exit.")
-            self.window.update()
-            self.window.exitonclick()
+                self.update_display()
     
-    def ask_question(self):
-        """Ask the current math question"""
-        if not self.current_question:
-            return
-            
-        a = self.current_question.get('a')
-        op = self.current_question.get('op')
-        b = self.current_question.get('b')
+    def send_message(self, message):
+        """Send a message to the server."""
+        if not self.connected:
+            return False
         
-        question_text = f"Your turn! What is {a} {op} {b}?"
-        self.write_question(question_text)
-        
-        # Get answer
-        answer = self.window.textinput("Quiz Time!", f"What is {a} {op} {b}?")
-        
-        # Send answer to server
         try:
-            answer_int = int(answer) if answer is not None else None
-            self.client_socket.send(json.dumps({
-                "type": "answer",
-                "answer": answer_int,
-                "question": self.current_question
-            }).encode('utf-8'))
-        except ValueError:
-            # Invalid input, send None
-            self.client_socket.send(json.dumps({
-                "type": "answer",
-                "answer": None,
-                "question": self.current_question
-            }).encode('utf-8'))
+            self.socket.send(json.dumps(message).encode())
+            return True
+        except Exception as e:
+            print(f"Error sending message: {e}")
+            self.connected = False
+            return False
     
-    def write_status(self, message):
-        """Write status message at the top of the screen"""
-        self.status_writer.clear()
-        self.status_writer.write(message, align="center", font=("Arial", 14, "bold"))
-        self.window.update()
+    def mark_ready(self, name):
+        """Mark this player as ready to start the game."""
+        self.player_name = name
+        return self.send_message({
+            "type": "ready",
+            "name": name
+        })
     
-    def write_question(self, message):
-        """Write question at the bottom of the screen"""
-        self.question_writer.clear()
-        self.question_writer.write(message, align="center", font=("Arial", 12, "normal"))
-        self.window.update()
+    def submit_answer(self, answer):
+        """Submit an answer to the current question."""
+        return self.send_message({
+            "type": "answer",
+            "answer": answer
+        })
+    
+    def initialize_game(self):
+        """Set up the game UI."""
+        self.window = game_logic.setup_screen(f"Turtle Race with Quiz - {self.player_name}")
+        self.red_turtle, self.blue_turtle = game_logic.init_turtles()
+        game_logic.draw_finish_line()
+        
+        # Update positions if game already started
+        with self.lock:
+            if self.game_state["game_started"]:
+                self.red_turtle.goto(*self.game_state["red_pos"])
+                self.blue_turtle.goto(*self.game_state["blue_pos"])
+    
+    def update_display(self):
+        """Update the game display based on current state."""
+        if not self.window or not self.red_turtle or not self.blue_turtle:
+            return
+        
+        with self.lock:
+            # Update turtle positions
+            if "red_pos" in self.game_state and "blue_pos" in self.game_state:
+                self.red_turtle.goto(*self.game_state["red_pos"])
+                self.blue_turtle.goto(*self.game_state["blue_pos"])
+            
+            # If there's a winner, announce it
+            if self.game_state.get("winner"):
+                winner_color = self.game_state["winner"]
+                winner_index = 0 if winner_color == "red" else 1
+                winner_name = self.client_names[winner_index] if winner_index < len(self.client_names) else "Unknown"
+                game_logic.announce_winner(f"{winner_color} ({winner_name})")
     
     def run(self):
-        """Run the client"""
-        self.write_status("Welcome to Turtle Race with Quiz!")
-        self.write_question("Please enter your name to join")
+        """Run the game client."""
+        # Get server details
+        host = turtle.textinput("Connect to Game", "Enter server IP address:")
+        if not host:
+            return
         
-        self.player_name = self.window.textinput("Player Name", "Enter your name:")
-        if not self.player_name:
-            self.player_name = "Guest"
+        # Initialize game display with wait message before connecting
+        self.window = game_logic.setup_screen("Turtle Race with Quiz - Connecting...")
+        game_logic.write_center("Connecting to server...", y=0)
+        
+        # Force a single update before trying to connect
+        try:
+            self.window.update()
+        except:
+            return
         
         # Connect to server
-        self.connect_to_server()
+        if not self.connect_to_server(host):
+            try:
+                self.window.clear()
+                game_logic.write_center("Failed to connect to server.", y=0)
+                self.window.update()
+                time.sleep(3)
+            except:
+                pass
+            return
+        
+        # Update connection status
+        self.window.clear()
+        game_logic.write_center("Connected to server...", y=50)
+        game_logic.write_center("Waiting for player information.", y=0)
+        
+        # Wait for player info from server
+        connecting_time = 0
+        while self.player_num is None and self.connected and connecting_time < 20:  # 20 second timeout
+            try:
+                self.window.update()
+                self.process_messages()  # Process any pending messages
+            except:
+                break
+            connecting_time += 0.1
+            time.sleep(0.1)
+        
+        if not self.connected or self.player_num is None:
+            try:
+                self.window.clear()
+                game_logic.write_center("Connection failed or timed out!", y=0)
+                self.window.update()
+                time.sleep(3)
+            except:
+                pass
+            return
+            
+        # Get player name - make sure we have player_num set
+        player_str = str(self.player_num + 1) if self.player_num is not None else "?"
+        color_str = self.player_color if self.player_color else "unknown"
+        
+        name = turtle.textinput("Player Name", f"You are Player {player_str} ({color_str}). Enter your name:")
+        if not name:
+            name = f"Player {player_str}"
+        
+        # Initialize game proper
+        self.player_name = name
+        self.initialize_game()
+        
+        # Mark ready to play
+        self.mark_ready(name)
+        game_logic.write_center(f"Welcome {name}! Waiting for other player...", y=0)
         
         # Main game loop
-        while not self.game_over:
-            self.window.update()
-            time.sleep(0.05)  # Small delay to reduce CPU usage
-        
-        self.window.mainloop()
+        try:
+            while self.connected:
+                try:
+                    if self.window:
+                        self.window.update()
+                except:
+                    break
+                
+                # Process any pending messages first
+                self.process_messages()
+                
+                # Handle input for questions
+                if self.need_input and self.current_question:
+                    # Ask the question
+                    q = self.current_question
+                    a, op, b = q["a"], q["op"], q["b"]
+                    prompt = f"What's {a} {op} {b}?"
+                    
+                    try:
+                        answer = turtle.textinput(f"Your Turn ({self.player_color})", prompt)
+                        self.submit_answer(answer)
+                        self.need_input = False  # Reset input request
+                    except:
+                        break
+                
+                time.sleep(0.1)  # Small delay to avoid high CPU usage
+                
+        except turtle.Terminator:
+            pass  # Window was closed
+        except Exception as e:
+            print(f"Error in main loop: {e}")
+        finally:
+            # Close connection
+            if self.socket:
+                try:
+                    self.socket.close()
+                except:
+                    pass
 
 if __name__ == "__main__":
     client = GameClient()
-    client.run()
+    try:
+        client.run()
+    except KeyboardInterrupt:
+        print("Client stopped by user")
